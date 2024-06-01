@@ -1,0 +1,29 @@
+1. Get the output from the Custom.Server.Utils.KAPEtoS3 for adding monitoring
+cat output/velociraptor/Custom.Server.Utils.KAPEtoS3
+copy this
+
+2. Go  into Velociraptor Server console admin GUI
+
+3. Go to the wrench and click on the plus sign to "Add an Artifact"
+
+4. Paste in to data from step 1, replacing current data for new artifact.  Hit Save.
+
+5. Select the eye in the left side menu and update server monitoring tables
+Select "kape" as input into select an artifact.
+
+6. click on the "Custom.Server.Utils.KAPETOs3"
+
+7. Hit Launch
+
+8.  Go to client system
+
+9. Hit Collected
+
+10. Add a collection with plus sign or "New Collection"
+
+11.  We are launching a kape triage
+
+12.  Search for Kape and click "Windows.KapeFiles.Targets"
+
+13.  Under Configure Parameters, select it again, and select KapeTriage box, and hit "Launch" 
+

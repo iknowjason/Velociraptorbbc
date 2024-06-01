@@ -52,4 +52,21 @@ dpkg -i /home/ubuntu/*.deb
 echo "Add velociraptor administrator in config"
 sudo -u velociraptor bash -c 'velociraptor --config /etc/velociraptor/server.config.yaml user add ${vadmin_username} ${vadmin_password} --role administrator'
 
+# Get velociraptor kapefile 
+echo "Get kapefile"
+file="${kapefile}"
+object_url="https://${s3_bucket}.s3.${region}.amazonaws.com/$file"
+echo "Downloading s3 object url: $object_url"
+for i in {1..5}
+do
+    echo "Download attempt: $i"
+    curl "$object_url" -o /home/ubuntu/${kapefile}
+    if [ $? -eq 0 ]; then
+        echo "Download successful."
+        break
+    else
+        echo "Download failed. Sleep and retry"
+        sleep 30
+    fi
+done
 echo "End of bootstrap script"
