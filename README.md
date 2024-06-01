@@ -1,278 +1,174 @@
-# Operator Lab 
-
-Operator Lab is a security lab building framework for Red and Blue teams, with the goal of helping Red make Blue better. This documentation is a work in progress and will be updated further.
-
 ## Overview
 
-Operator Lab framework works as a python script in which users pass parameters to the script, which dynamically builds different ```capabilities```.  The ```capabilities``` can be mixed and matched in myriad different combinations, allowing one to automate creating a unique enterprise security lab. The ```capabilities``` are terraform data templates that live in the ```terraform-templates``` directory as jinja templates.  The jinja terraform data templates can be customized for your unique requirements.  The python script does variable substitution to manipulate the terraform files.  Inside of each capability, there are also specific sub-directories for how the capabilities are built.  These are constructed as configuration files, bash, and powershell scripts.
+This is a simple terraform template creating an automated deployment of the awesome "Breaches Be Crazy" velociraptor-to-timesketch automation for DFIR triage.  It automically builds the following resources hosted in AWS:
 
-## Capability Summary
-* Windows, Linux, MacOS 
-* Active Directory Domain Services (AD DS) with Domain Join & Auto Logon Domain User support
-* Breach and Attack Simulation (Caldera, VECTR)
-* Elastic Stack (ELK)
-* CloudWatch, CloudTrail, SSM, and S3 bucket (Cloud Native SIEM automation)
-* Velociraptor
-* GHOSTS NPC
-* Hashicorp Nomad
-* Command and Control (C2) 
+* One Linux EC2 instance deploying Timesketch server
+* One Linux EC2 instance deploying Velociraptor server
+* One Windows Client (Windows Server 2022) deploying Velociraptor client and registering to the server
+* One S3 bucket for staging of scripts and storing collected zip/plaso files for analysis
+* One IAM user with programmatic access keys for reading/writing to S3 bucket
+* An IAM instance profile with a role attached on the Timesketch EC2 instance allowing reading/writing to S3 bucket
 
-## Installation
+See the **Features and Capabilities** section for more details.
+
+## Requirements and Setup
 
 **Tested with:**
 
-* Mac OS 13.4, Ubuntu Linux 22.04
-* python 3.9
+* Mac OS 13.4
 * terraform 1.5.7
 
-### Extra requirements (will include requirements.txt soon):
+**Clone this repository:**
 
-**Python 3:**
-Requires Python 3.7 or later for the RandomDataGenerators module
+**Credentials Setup:**
 
-**Faker:**  
-
-```
-pip3 install faker
-```
-
-**RandomDataGenerators:**
-
-```
-pip3 install RandomDataGenerators
-```
-
-Credentials Setup:
 Generate an IAM programmatic access key that has permissions to build resources in your AWS account.  Setup your .env to load these environment variables.  You can also use the direnv tool to hook into your shell and populate the .envrc.  Should look something like this in your .env or .envrc:
+
 ```
 export AWS_ACCESS_KEY_ID="VALUE"
 export AWS_SECRET_ACCESS_KEY="VALUE"
 ```
 
-## Usage 
+## Build and Destroy Resources
 
-### Basic Usage
-
-The basic usage is like this:  
-1. Run operator:  ```python3 operator.py <OPTIONS>```.  This will generate terraform files.  Then run terraform.
-2. ```terraform init```
-3. ```terraform apply -auto-approve```
-
-**Destroy:** When you are finished and wish to destroy the resources:  ```terraform destroy -auto-approve```
-
-## Capabilities:  Usage Examples
-
-### Change AWS region
-
-Changes the AWS region to ```eu-central-1```.  The default region is ```us-east-2```.
-```
-python3 operator.py --region eu-central-1
-```
-To make a permanent change to the default region, modify the variable ```default_region``` inside script.
-
-### Build Linux, Mac, or Windows with Quantity Number of Systems Built
-
-Build any number of Windows, Linux, or MacOS systems with exact quantities.  You do this with ```--windows <count>```, ```--linux <count>```, and ```--macs <count>```.
-
-**Build 3 Kali Linux systems in default region:**
+### Run terraform init
+Change into the AutomatedEmulation working directory and type:
 
 ```
-python3 operator.py --linux 3 --linux-os kali
+terraform init
 ```
 
-**Build 2 Red Hat systems in eu-west-1:**
+### Run terraform plan or apply
 ```
-python3 operator.py --linux 2 --linux-os redhat --region eu-west-1
+terraform apply -auto-approve
 ```
-
-Current Linux OS support:  ubuntu, debian, redhat, amazon,  kali
-
-**Build MacOS:**
+or
 ```
-python3 operator.py --macs 1 --mac_instance intel
+terraform plan -out=run.plan
+terraform apply run.plan
 ```
 
-Builds 1 Mac instance with Intel architecture.  For detailed guidance on building Macs, please see the MacLab documentation.  Operator was used to create MacLab:
-https://github.com/iknowjason/MacLab
-
-**Build Windows Client Systems:**
-
+### Destroy resources
 ```
-python3 operator.py --windows 1 --win-os [win10|ws2022|ws2019]
+terraform destroy -auto-approve
 ```
 
-The default OS is Windows Server 2022 and this works in all AWS regions.  Same for Windows Server 2019.  The ```--win10``` option builds a Windows 10 Professional OS and this is only supported currently in us-east-2 region.  
-
-All Windows client systems build by default with Red Teams tools (Atomic Red Team) and Sysmon.
-
+### View terraform created resources
+The lab has been created with important terraform outputs showing services, endpoints, IP addresses, and credentials.  To view them:
 ```
-python3 operator.py --windows 1
+terraform output
 ```
 
-**Description:**  Builds one Windows Server 2022 clients instrumented with Sysmon, Atomic Red Team, and PurpleSharp.
+## Features and Capabilities
 
-```
-python3 operator.py --windows 1 --region us-west-1
-```
+### Important Firewall and White Listing
+The sg.tf has been changed to allow 0.0.0.0/0.  You can easily make a change to this so that only your source IPv4 is allowed access by modifying the lines shown below.  Uncomment the line using the call to ifconfig.so.
 
-**Description:**  Same as above, but builds all resources in us-west-1 instead of default region (us-east-2)
-
+By default when you run terraform apply, your public IPv4 address is determined via a query to ifconfig.so and the ```terraform.tfstate``` is updated automatically.  If your location changes, simply run ```terraform apply``` to update the security groups with your new public IPv4 address.  If ifconfig.me returns a public IPv6 address,  your terraform will break.  In that case you'll have to customize the white list.  To change the white list for custom rules, update this variable in ```sg.tf```:
 ```
-python3 operator.py --windows 2 --admin MyAdmin --password MyPassword
-```
-
-**Description:**  Builds two Windows client systems with a local administrator username and password that is user specified (instead of randomly generated).
-
-```
-python3 operator.py --windows 2 --win-os win10
+locals {
+  src_ip = "${chomp(data.http.firewall_allowed.response_body)}/32"
+  #src_ip = "0.0.0.0/0"
+}
 ```
 
-**Description:**  Builds two Windows client systems with an Operating System of Windows 10 Professional.  Note that this only works right now in the default region of us-east-2.
+### Resource Details
 
-### Active Directory Domain Services (AD DS)
-Builds a domain controller with lots of parameters for options:
+**Timesketch Linux Server**
 
+The following local project files are important for customization:
+
+* timesketch.tf:  The terraform file that builds the Linux server and all terraform variables for Timesketch.
+* files/timesketch/bootstrap.sh.tpl:  The bootstrap script for Timesketch and other services.
+
+Note:  All important files for building the Timesketch server are located in ```files/timesketch```.  This includes all systemd service installation, scripts, and a customized deploy_timesketch.sh script necessary for building Timesketch without an interactive user input.  The timesketch main bootstrap script pulls down all files from the S3 bucket that are used in the deployment.
+
+**Troubleshooting Timesketch:**
+
+SSH into the Timesketch server by looking in ```terraform output``` for this line:
 ```
-python3 operator.py --domain_controller --ad_domain rtcfingroup.com --admin RTCAdmin --password MyPassword012345 --ad_users 500 --windows 2  --domain_join
-```
-
-**Description:** This will create a Domain Controller in dc.tf and install AD DS with forest name of rtcfingroup.com. This will create a custom local administrator account and password with 500 domain users. In this example, the domain users are randomly generated using the command line flag of --ad_users for a total of 500 users. The domain users will be written to ad_users.csv and will have the password specified in --password. Note that domain join is disabled by default for Windows clients but the domain_join parameter enables it for all Windows clients created. This will also create two Windows client terraform files (win1.tf, win2.tf) as well as a terraform file for the Domain Controller (dc.tf).
-
-```
-python3 operator.py --domain_controller --ad_domain rtcfingroup.com --admin RTCAdmin --password MyPassword012345 --csv users.csv --windows 2  --domain_join
-```
-
-**Description:** Same capabilities as above, except it can import a custom list of Domain Users into active directory on the DC instance. The script checks to make sure that users are in the correct format. 
-
-### Install Breach and Attack Simulation (Caldera, VECTR)
-```python3 operator.py --winclient 1 --bas```
-
-**Description:**  Installs a Breach and Attack Simulation Linux server.  The server installs Caldera, VECTR.  For each Windows client, the Caldera sandcat agent is installed and registers to BAS server automatically.  
-
-Reference:  https://github.com/SecurityRiskAdvisors/VECTR
-
-### Install SIEM (Elastic)
-
-```
-python3 operator.py --windows 1 --siem [elk|splunk]
+SSH to Timesketch
+---------------
+ssh -i ssh_key.pem ubuntu@18.217.18.67
 ```
 
-**Description:**  Installs either Elasticsearch with Kibana or a Splunk Enterprise linux server.  Each windows client automatically installs and ships elastic logs via winlogbeat.
-
-Note:  The Splunk option can be removed.  The Splunk server implemenation is done, but stopped working on the clients to forward Universal Forwarder.  Decided that for Splunk, Attack Range is much more comprehensive and also unknown future with Cisco acquisition.  This Operator project can focus on ELK implementation.
-
-### CloudWatch, CloudTrail, SSM, and S3 bucket (Cloud Native SIEM)
-
+Once in the system, tail the user-data logfile.  You will see the steps from the ```bootstrap.sh.tpl``` script running:
 ```
-python3 operator.py --windows 2 --s3_cloudtrail
+tail -f /var/log/user-data.log
 ```
 
-**Description:** 
-Adds two Windows client systems installed with Amazon cloudwatch agent.  The EC2 instance with cloudwatch has a special IAM instance profile with permissions allowing it to send logs to cloudwatch.  A customizable configuration for cloudwatch builds from ```files/windows/cloudwatch.config.json```.  The configuration builds sysmon, powershell logging configuration, and security logs.  All of these get sent to Cloudwatch.  A cloudtrail trail for auditing is also created with a logwatch group.  All of the logs get sent to an S3 bucket which is orchestrated through Amazon firehose.  All windows systems have a special SSM permission policy attached via Instance Profile.  The SSM configuration for System Manager is a realistic configuration for Amazon customers, and allows managing Windows and sending shell commands to the windows systems.  Will need to add the SSM cheat sheet of commands to run against Windows.
+**Teraform Output:**
 
-### Velociraptor
-
+View the terraform outputs for important Timesketch access information:
 ```
-python3 operator.py --windows 3 --velociraptor
+Timesketch server
+-----------------
+http://ec2-18-217-18-67.us-east-2.compute.amazonaws.com
+user: admin
+pass: Timesketch2024
 ```
+**Velociraptor Linux Server**
 
-**Description:** 
-Builds a Velociraptor Linux server with PKI generated by terraform.  Builds three Windows client systems.  All Windows client systems automatically get correct TLS certificates and install Velociraptor client with configuration that registers to Velociraptor Linux server.
+The following local project files are important for customization:
 
-Reference:  https://docs.velociraptor.app/
+* velociraptor.tf:  The terraform file that builds the Linux server and all terraform variables for Velociraptor.
+* files/velociraptor/bootstrap.sh.tpl:  The bootstrap script for Velocirpator server.
+* files/velociraptor/config.yml.tpl: The configuration template file.
+* files/velociraptor/Custom.Server.Utils.KAPEtoS3.tpl: The artifact template file.
 
-### Ghosts NPC
-```python3 operator.py --windows 1 --ghosts```
+Velociraptor is built with automation using an internal PKI that is built with terraform.  All certificates are generated using terraform and deployed to the Linux server configuration and Windows client system.
 
-Description:  Installs the Ghosts NPC (Non-player Character) framework.  This creates a GHOSTS server with Grafana dashboards and API.  For each Windows client, they automatically install the Ghosts client and register to the Ghosts API server.  
-
-Reference:  https://github.com/cmu-sei/GHOSTS
-
-### Nomad
-
+After the lab builds, get the rendered artifact file that automatically builds the parameters with S3 bucket and IAM credentials, which can then be uploaded using Velociraptor GUI console:
 ```
-python3 operator.py --windows 1 --nomad
-```
-
-Description:  Installs a Nomad cluster and installs the nomad client on each windows client system.  Nomad jobs can be pushed to clients.  This allows red team automation and orchestration of chaining TTPs across nomad clients.  The ```jobs``` directory contains an example ping command that is pushed to all clients.  A library of different job files can be developed to automate Red Team TTPs.
-
-Reference:  https://www.nomadproject.io/
-
-
-### C2
-
-```
-python3 operator.py --csp [aws|azure|digitalocean] --c2 [empire|sliver|none]
+cat output/velociraptor/Custom.Server.Utils.KAPEtoS3
 ```
 
-Description:  Installs a command and control (C2) Linux server.  The --c2 option sets the C2 server software.  The options are sliver, empire, or none.  None is if you want to customize bash script.  The --csp option switches between cloud provider, either AWS, Azure, or Digital Ocean.  Ensure that you follow AWS Terms of Service because they don't allow hosting a C2 unless you have permission.
+The output from this file can be copy and pasted in the add artifact section of Velociraptor and launching the server monitoring tables with it.
 
-Reference Sliver:  https://github.com/BishopFox/sliver
-
-Reference Empire (BC-Security):  https://github.com/BC-SECURITY/Empire
-
-## Custom Lab Combinations
-
-Mix and match the capabilities to your delight with myriad possibilities.  Here are some examples:
-
-### Example 1:  Enterprise Windows AD Attack with Breach and Attack Simulation
-
+View the terraform outputs for important Velociraptor GUI console and SSH access information:
 ```
-python3 operator.py -dc --windows 2 --domain_join --bas
-```
+-------
+Velociraptor Console
+-------------------
+https://ec2-3-135-20-149.us-east-2.compute.amazonaws.com:8889
 
-### Example 2:  Enterprise Windows AD Attack with Breach and Attack Simulation and Velociraptor
+Velociraptor Credentials
+------------------------
+admin:shining-firefly-SepA
 
-```
-python3 operator.py -dc --windows 2  --domain_join --bas -vel
+SSH to Velociraptor
+-------------------
+ssh -i ssh_key.pem ubuntu@3.135.20.149
 ```
 
-### Example 3:  Enterprise Windows AD Attack with Breach and Attack Simulation and GHOSTS
+### Windows Client
+
+This system will install the velociraptor client service on Windows.  Monitor the Velociraptor GUI console and you will eventually see the client register.
+
+The Windows Client system is built from ```win1.tf```.  Windows Server 2022 Datacenter edition is currently used.  You can upload your own AMI image and change the data reference in win1.tf.  The local bootstrap script is located in ```files/windows/bootstrap-win.ps1.tpl```.  RDP into the Windows system and follow this logfile to see how the system is bootstrapping:
 
 ```
-python3 operator.py -dc --windows 2  --domain_join --bas --ghosts
+C:\Terraform\bootstrap_log.log
 ```
 
-### Example 4:  Enterprise Windows AD Attack with Breach and Attack Simulation and Elastic SIEM
+The additional bootstrap scripts that will run on the system and can be configured locally include:
 
+files/windows/red.ps1.tpl:  Installs Atomic Red Team
+files/windows/velociraptor.ps1.tpl:  Install Velociraptor client on Windows.
+
+You can monitor the execution of these files by RDP into the Windows system and monitoring the logfiles in C:\terraform.
+
+**Terraform Outputs**
+
+See the output from ```terraform output``` to get the IP address and credentials for RDP:
 ```
-python3 operator.py -dc --windows 2  --domain_join --bas --siem elk
+-------------------------
+Virtual Machine win1
+-------------------------
+Instance ID: i-02fc369e90a604a71
+Computer Name:  win1
+Private IP: 10.100.20.10
+Public IP:  18.217.76.164
+local Admin:  OpsAdmin
+local password: Frank-lilith-930978
 ```
-
-
-### Example 5:  Enterprise Windows AD Attack with Breach and Attack Simulation and Cloud Native SIEM (CloudWatch, CloudTrail, S3 Auditing)
-
-```
-python3 operator.py -dc --windows 2  --domain_join --bas --s3_cloudtrail
-```
-
-### Example 6:  Enterprise Windows AD Attack with Empire C2 hosted in Digital Ocean and one Kali
-
-```
-python3 operator.py -dc --windows 2  --domain_join --linux 1 --linux-os kali --c2 empire --csp digitalocean
-```
-
-
-
-## To Do List History of Completion
-
-- [x] Use jinja templates for terraform instrumented with python ✅ 2023-07-25
-- [x] Test install_red script to get Atomic Red Team, PurpleSharp installed ✅ 2023-07-25
-- [x] Test sysmon install scripts on windows ✅ 2023-07-25
-- [x] Build DC and AD DS
-- [x] Domain Join on Windows Clients
-- [x] Auto logon domain users using domain credentials
-- [x] Nomad cluster / orchestration of red teaming (Wed) ✅ 2023-07-27
-- [x] BAS (Breach and Attack Simulation) box with Caldera Prelude Operator + VECTR ✅ 2023-08-25
-- [x] SIEM support (ELK) + winlogbeat log forwarding ✅ 2023-08-25
-- [x] Cloudtrail auditing and store in S3
-- [x] CloudWatch agent ship logs to S3 bucket
-- [x] Ship logs to S3 bucket instead of SIEM, using EC2 agent
-- [x] Ghosts NPC User Simulation ✅ 2023-08-25
-- [x] Prelude Operator headless C2 setup with pneuma
-- [x] Velociraptor server and endpoints
-- [x] C2 support
-- [x] Mac system support
-- [x] Linux system support (Ubuntu, Amazon Linux, Kali Linux, Debian, RHEL)
-
-
